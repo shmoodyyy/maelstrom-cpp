@@ -25,11 +25,15 @@
           maelstrom-clj
           ruby
           boost
+          glibc
+          libcxx
         ];
         nativeBuildInputs = with pkgs; [
           cmake
           gcc
 
+          glibc.dev
+          libcxx.dev
           clang-tools
           pkg-config
           upx
@@ -81,7 +85,6 @@
           nativeBuildInputs = with pkgs; [
             docker
             fish
-            libcxx
           ] ++ nativeBuildInputs;
 
           shellHook = ''
@@ -90,7 +93,7 @@
             [
               {
                 "directory": "$PWD",
-                "command": "g++ -Og -g3 -ggdb -Wall -pedantic -std=c++23 -I./src -o src/%.o src/%.cpp",
+                "command": "g++ -Og -g3 -ggdb -Wall -pedantic -std=c++23 -I./src -I${pkgs.libcxx.dev}/include/c++/v1 -I${pkgs.glibc.dev}/include -o src/%.o src/%.cpp",
                 "file": "src/.*\\\\.cpp$"
               },
             ]

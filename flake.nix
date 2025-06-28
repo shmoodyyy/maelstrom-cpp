@@ -91,7 +91,7 @@
             [
               {
                 "directory": "$PWD",
-                "command": "g++ -Og -g3 -ggdb -Wall -pedantic -std=c++23 -I./src -I${pkgs.libcxx.dev}/include/c++/v1 -I${pkgs.glibc.dev}/include -I${nlohmann_json} -o src/%.o src/%.cpp",
+                "command": "g++ -Og -g3 -ggdb -Wall -pedantic -std=c++23 -I./src -I${pkgs.libcxx.dev}/include/c++/v1 -I${pkgs.glibc.dev}/include -I${pkgs.nlohmann_json}/include -o src/%.o src/%.cpp",
                 "file": "src/.*\\\\.cpp$"
               },
             ]

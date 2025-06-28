@@ -9,7 +9,7 @@
 namespace maelstrom {
 
 class Message {
-  using json = nlohmann::ordered_json;
+  using json = nlohmann::json;
 public:
   Message(const std::string_view message);
 

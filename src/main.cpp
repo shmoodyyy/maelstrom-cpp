@@ -1,4 +1,4 @@
-#include "../common/maelstrom.h"
+#include "common/maelstrom.h"
 #include <string>
 
 int main() {

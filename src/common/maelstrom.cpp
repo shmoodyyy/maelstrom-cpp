@@ -36,7 +36,7 @@ void maelstrom::Message::add_handler(std::string type, callback fn) {
 }
 
 void maelstrom::run_node() {
-  using json = nlohmann::ordered_json;
+  using json = nlohmann::json;
   maelstrom::Message::add_handler("init", [&](Message& msg) {
       json response;
       response["type"] = "init_ok";

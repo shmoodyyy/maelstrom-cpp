@@ -35,9 +35,7 @@
           glibc.dev
           libcxx.dev
           clang-tools
-          pkg-config
-          upx
-          binutils
+          nlohmann_json
         ];
       in 
       {
@@ -80,11 +78,11 @@
         # Development shell
         devShells.default = pkgs.mkShell {
           buildInputs = [
-
           ] ++ buildInputs;
           nativeBuildInputs = with pkgs; [
             docker
             fish
+            gdb
           ] ++ nativeBuildInputs;
 
           shellHook = ''
@@ -93,7 +91,7 @@
             [
               {
                 "directory": "$PWD",
-                "command": "g++ -Og -g3 -ggdb -Wall -pedantic -std=c++23 -I./src -I${pkgs.libcxx.dev}/include/c++/v1 -I${pkgs.glibc.dev}/include -o src/%.o src/%.cpp",
+                "command": "g++ -Og -g3 -ggdb -Wall -pedantic -std=c++23 -I./src -I${pkgs.libcxx.dev}/include/c++/v1 -I${pkgs.glibc.dev}/include -I${nlohmann_json} -o src/%.o src/%.cpp",
                 "file": "src/.*\\\\.cpp$"
               },
             ]

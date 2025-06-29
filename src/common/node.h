@@ -16,7 +16,7 @@ public:
   void run();
   void stop();
 
-  using callback_fn = std::function<Message&&(const Message&)>;
+  using callback_fn = std::function<Message(const Message&)>;
   void register_handler(MessageType type, callback_fn handler);
 
 private:
@@ -37,6 +37,7 @@ private:
   std::vector<std::string>  all_node_ids;
 
   std::mutex                mutex_write_response;
+
   struct ThreadTask {
     std::shared_ptr<Message> message;
     callback_fn invoke;

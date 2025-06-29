@@ -24,7 +24,6 @@
         buildInputs = with pkgs; [
           maelstrom-clj
           gcc
-          glibc.dev
           libcxx.dev
         ];
         nativeBuildInputs = with pkgs; [

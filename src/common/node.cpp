@@ -2,6 +2,7 @@
 #include "common/message.h"
 #include "ext/nlohmann/json.hpp"
 #include <iostream>
+#include <mutex>
 #include <queue>
 #include <thread>
 
@@ -10,14 +11,18 @@ Node::Node()
 
 void Node::init(std::vector<std::string>&& all_nodes, int self_index)
 {
+  if (!all_node_ids.empty() || !self_node_id.empty()) {
+    std::clog << "[❌][SYS] received 'init' message after node already initialized\n";
+    return;
+  }
+  // TODO: add middleware to be pissy about unrecognized node id references
   all_node_ids = std::move(all_nodes);
   self_node_id = all_node_ids.at(self_index);
+    std::clog << "[✅][SYS] node initialized\n";
 }
 
 void Node::run()
 {
-  using json = nlohmann::json;
-
   constexpr int worker_count = 4;
   std::vector<std::thread> worker_pool;
   worker_pool.reserve(4);
@@ -31,11 +36,23 @@ void Node::run()
         ThreadTask task = std::move(task_queue.front());
         task_queue.pop();
         queue_lock.unlock();
-        task.invoke(*task.message);
+
+        std::clog << "[" << std::this_thread::get_id() << "][⚒️][JOB] invoking '" << message_type_to_string(task.message->type) 
+                  << "' handler on message " << task.message->as_json() << '\n';
+        Message response = task.invoke(*task.message);
+        if (response.type != INVALID) {
+          std::unique_lock lock(mutex_write_response);
+          std::clog << "[" << std::this_thread::get_id() << "][✉️][JOB] === response begin:\n";
+          std::cout << response.as_json() << std::endl;
+          std::clog << "[" << std::this_thread::get_id() << "][✉️][JOB] === response end\n";
+          lock.unlock();
+          std::clog << "[" << std::this_thread::get_id() << "][⚒️][JOB] finished handling '" << message_type_to_string(task.message->type) << "'\n";
+        }
       }
     });
   }
 
+  state = RUNNING;
   while (RUNNING == state) {
     std::string buf;
     std::getline(std::cin, buf);
@@ -43,6 +60,7 @@ void Node::run()
       state = SHUTDOWN;
       break;
     }
+    std::clog << "[ℹ️][MSG] received: '" << buf << "'\n";
     dispatch_message(std::move(buf));
   }
 
@@ -65,27 +83,33 @@ void Node::stop()
 
 void Node::register_handler(MessageType type, callback_fn handler)
 {
-  using json = nlohmann::json;
+  std::clog << "[ℹ️][RPC] attempting to register handler for '" << message_type_to_string(type) << "'...\n";
   if (auto found = handler_map.find(type); found != handler_map.end()) {
-    std::abort();
+    std::clog << "[❌][RPC] handler for '" << message_type_to_string(type) << "' already exists.\n";
+    return;
   }
   handler_map.emplace(type, handler);
+  std::clog << "[✅][RPC] handler for '" << message_type_to_string(type) << "' registered.\n";
 }
 
 void Node::dispatch_message(std::string&& raw)
 {
   std::optional<Message> msg = Message::parse(raw);
-  if (!msg.has_value())
+  if (!msg.has_value()) {
+    std::clog << "[❓][MSG] failed to parse: '" << raw << "'\n";
     return;
+  }
+  std::clog << "[✅][MSG] parsed: '" << msg->as_json() << "'\n";
 
   auto found = handler_map.find(msg->type);
   if (found == handler_map.end()) {
-    // TODO: respond with unrecognized RPC?
+    std::clog << "[❓][MSG] no handler for message type: '" << message_type_to_string(msg->type) << "'\n";
+    // TODO: respond with unrecognized RPC error msg?
     return;
   }
 
   ThreadTask new_task;
-  new_task.message = std::make_shared<Message>(std::move(msg));
+  new_task.message = std::make_shared<Message>(std::move(msg.value()));
   new_task.invoke = found->second;
 
   // do i move this to a scope? i am deeply schizoid-paranoid about the compiler's interpretation of this

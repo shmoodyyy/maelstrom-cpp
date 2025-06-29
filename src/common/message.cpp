@@ -38,14 +38,28 @@ auto message_type_to_string(MessageType type) -> const std::string_view
 
 auto Message::parse(std::string_view raw) -> std::optional<Message>
 {
-  return from_json(raw);
+  return from_json(json::parse(raw));
 }
 
 auto Message::from_json(const json& json_msg) -> std::optional<Message> {
-  if (!json_msg.contains("src") || !json_msg["src"].is_string()
-    || !json_msg.contains("dest") || !json_msg["dest"].is_string()
-    || !json_msg.contains("body") || !json_msg["body"].is_object()
-    || !json_msg.at("body").contains("type") || !json_msg.at("body").at("type").is_string())  {
+  bool required_fields_present = true;
+  if (!json_msg.contains("src") || !json_msg["src"].is_string()) {
+    std::clog << "[❌][MSG] message missing required field 'src'\n";
+    required_fields_present = false;
+  }
+  if (!json_msg.contains("dest") || !json_msg["dest"].is_string()) {
+    std::clog << "[❌][MSG] message missing required field 'dest'\n";
+    required_fields_present = false;
+  }
+  if (!json_msg.contains("body") || !json_msg["body"].is_object()) {
+    std::clog << "[❌][MSG] body of message is not of JSON type 'object'\n";
+    required_fields_present = false;
+  } else if (!json_msg.at("body").contains("type") || !json_msg.at("body").at("type").is_string()) {
+    std::clog << "[❌][MSG] body of message does not contain 'type'\n";
+    required_fields_present = false;
+  }
+  if (!required_fields_present) {
+    std::clog << "[❌][MSG] not all required fields present\n";
     return std::nullopt;
   }
 
@@ -58,17 +72,19 @@ auto Message::from_json(const json& json_msg) -> std::optional<Message> {
     json_msg["body"].contains("is_reply_to")
       ? json_msg["body"]["is_reply_to"].get<int>()
       : -1;
+  
+  if (parsed_type == INVALID)
+    return std::nullopt;
 
-  return 
-    parsed_type == INVALID
-      ? std::nullopt
-      : std::make_optional(
-          Message(
-            parsed_type,
-            msg_id,
-            reply_id,
-            json_msg["src"].get<std::string_view>(),
-            json_msg["dest"].get<std::string_view>()));
+  Message msg(
+    parsed_type,
+    msg_id,
+    reply_id,
+    json_msg["src"].get<std::string_view>(),
+    json_msg["dest"].get<std::string_view>()
+  );
+  msg.body = json_msg["body"];
+  return msg;
 }
 
 Message::Message() 
@@ -83,11 +99,18 @@ Message::Message(MessageType type, int id, std::string_view from, std::string_vi
 
 Message::Message(MessageType type, int id, int reply_id, std::string_view from, std::string_view to)
   : type(type)
-  , id(type == INVALID ? -1 : next_id())
+  , id(type == INVALID ? -1 : id)
   , reply_id(type == INVALID ? -1 : reply_id)
   , from(from)
   , to(to)
-{}
+{
+  if (type != INVALID)
+    body["type"] = message_type_to_string(type);
+  if (id != -1)
+    body["msg_id"] = id;
+  if (reply_id != -1)
+    body["in_reply_to"] = reply_id;
+}
 
 auto Message::create_response() const -> Message
 {
@@ -101,7 +124,10 @@ auto Message::create_response() const -> Message
       std::cerr << "unimplemented response for message of type '" << message_type_to_string(type) << "'\n";
       return Message();
   }
-  return Message(response_type, id, to, from);
+  // this static atomic id gen is a mess
+  Message response(response_type, next_id(), to, from);
+  response.body["in_reply_to"] = id;
+  return response;
 }
 
 auto Message::as_json() const -> json
@@ -115,7 +141,6 @@ auto Message::as_json() const -> json
     as_json["body"]["msg_id"] = id;
   if (reply_id != -1)
     as_json["body"]["in_reply_to"] = reply_id;
-
   return as_json;
 }
 

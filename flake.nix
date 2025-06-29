@@ -23,59 +23,15 @@
 
         buildInputs = with pkgs; [
           maelstrom-clj
-          ruby
-          boost
-          glibc
-          libcxx
-        ];
-        nativeBuildInputs = with pkgs; [
-          cmake
           gcc
-
           glibc.dev
           libcxx.dev
+        ];
+        nativeBuildInputs = with pkgs; [
           clang-tools
-          nlohmann_json
         ];
       in 
       {
-        packages = {
-          # Main application package
-          default = pkgs.stdenv.mkDerivation {
-            name = "malestrom-cpp";
-            src = pkgs.lib.sourceByRegex ./. [
-              "^src.*"
-              "^deps.*"
-              "^test.*"
-              "^CMakeLists.txt"
-            ];
-
-            buildInputs = buildInputs;
-            nativeBuildInputs = nativeBuildInputs;
-            doCheck = true;
-
-            installPhase = ''
-              make install
-              strip -s $out/bin/server
-            '';
-          };
-
-          test = pkgs.stdenv.mkDerivation {
-            pname = "malestrom-cpp-test";
-            version = "1.0.0";
-            src = pkgs.lib.sourceByRegex ./. [
-              "^src.*"
-              "^deps.*"
-              "^test.*"
-              "CMakeLists.txt"
-            ];
-
-            buildInputs = buildInputs;
-            nativeBuildInputs = nativeBuildInputs;
-          };
-        };
-
-        # Development shell
         devShells.default = pkgs.mkShell {
           buildInputs = [
           ] ++ buildInputs;
@@ -87,6 +43,7 @@
 
           shellHook = ''
             export MAELSTROM_DIR=${pkgs.maelstrom-clj}
+            export GLIBC_INCLUDE=${pkgs.glibc.dev}/include
             cat > compile_commands.json << EOF
             [
               {

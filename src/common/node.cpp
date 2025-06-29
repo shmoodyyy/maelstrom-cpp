@@ -6,7 +6,8 @@
 #include <queue>
 #include <thread>
 
-Node::Node()
+Node::Node(int num_workers)
+  : worker_count(num_workers)
 {}
 
 void Node::init(std::vector<std::string>&& all_nodes, int self_index)
@@ -23,11 +24,9 @@ void Node::init(std::vector<std::string>&& all_nodes, int self_index)
 
 void Node::run()
 {
-  constexpr int worker_count = 4;
-  std::vector<std::thread> worker_pool;
-  worker_pool.reserve(4);
-  for (int i = 0; i < worker_count; ++i) {
-    worker_pool.emplace_back([this] {
+  std::vector<std::thread> worker_pool(worker_count);
+  for (std::thread& worker : worker_pool) {
+    auto worker_fn = ([this] {
       while (true) {
         std::unique_lock queue_lock(mutex_thread_tasks);
         queue_condition.wait(queue_lock, [this]{ return state == SHUTDOWN || !task_queue.empty(); });
@@ -46,10 +45,13 @@ void Node::run()
           std::cout << response.as_json() << std::endl;
           std::clog << "[" << std::this_thread::get_id() << "][✉️][JOB] === response end\n";
           lock.unlock();
-          std::clog << "[" << std::this_thread::get_id() << "][⚒️][JOB] finished handling '" << message_type_to_string(task.message->type) << "'\n";
+          std::clog << "[" << std::this_thread::get_id() << "][⚒️][JOB] finished handling '" 
+                    << message_type_to_string(task.message->type) << "'\n";
         }
       }
     });
+    std::thread t(worker_fn);
+    worker.swap(t);
   }
 
   state = RUNNING;

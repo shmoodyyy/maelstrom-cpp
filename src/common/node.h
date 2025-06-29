@@ -11,7 +11,7 @@ class Node
 {
   using json = nlohmann::json;
 public:
-  Node();
+  Node(int num_workers = 4);
   void init(std::vector<std::string>&& all_nodes, int self_index);
   void run();
   void stop();
@@ -32,7 +32,6 @@ private:
     SHUTDOWN,
   };
   std::atomic<NodeState>    state;
-  // 4
   std::string_view          self_node_id;
   std::vector<std::string>  all_node_ids;
 
@@ -45,6 +44,9 @@ private:
   std::mutex                mutex_thread_tasks;
   std::queue<ThreadTask>    task_queue;
   std::condition_variable   queue_condition;
+
+  const int worker_count;
+  // 4
 };
 
 #endif

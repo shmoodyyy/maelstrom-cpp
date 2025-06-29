@@ -4,7 +4,7 @@
 #include <fstream>
 
 int main(int argc, const char** argv) {
-  Node node;
+  Node node(16);
   node.register_handler(INIT_REQ, [&](const Message& msg) -> Message {
     // TODO: add in returning error responses
     if (!msg.body.contains("node_id") || !msg.body["node_id"].is_string()

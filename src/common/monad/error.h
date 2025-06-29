@@ -2,6 +2,4 @@
 #ifndef COMMON_MONAD_ERROR
 #define COMMON_MONAD_ERROR
 
-
-
 #endif

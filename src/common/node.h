@@ -20,8 +20,10 @@ public:
   void register_handler(MessageType type, callback_fn handler);
 
 private:
+  auto handle_init(const Message& msg) -> Message;
   void dispatch_message(std::string&& raw);
-  void write_response(json resposne);
+
+  void worker_loop();
 
 private:
   std::unordered_map<MessageType, callback_fn> handler_map;

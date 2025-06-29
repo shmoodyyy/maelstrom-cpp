@@ -38,7 +38,10 @@ auto message_type_to_string(MessageType type) -> const std::string_view
 
 auto Message::parse(std::string_view raw) -> std::optional<Message>
 {
-  return from_json(json::parse(raw));
+  json parsed = json::parse(raw, nullptr, false);
+  if (parsed.is_discarded())
+    return std::nullopt;
+  return from_json(parsed);
 }
 
 auto Message::from_json(const json& json_msg) -> std::optional<Message> {

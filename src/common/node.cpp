@@ -6,9 +6,14 @@
 #include <queue>
 #include <thread>
 
+
 Node::Node(int num_workers)
-  : worker_count(num_workers)
-{}
+  : state(STARTING)
+  , worker_count(num_workers)
+{
+  register_handler(INIT_REQ, std::bind(&Node::handle_init, this, std::placeholders::_1));
+}
+
 
 void Node::init(std::vector<std::string>&& all_nodes, int self_index)
 {
@@ -22,37 +27,12 @@ void Node::init(std::vector<std::string>&& all_nodes, int self_index)
     std::clog << "[✅][SYS] node initialized\n";
 }
 
+
 void Node::run()
 {
   std::vector<std::thread> worker_pool(worker_count);
-  for (std::thread& worker : worker_pool) {
-    auto worker_fn = ([this] {
-      while (true) {
-        std::unique_lock queue_lock(mutex_thread_tasks);
-        queue_condition.wait(queue_lock, [this]{ return state == SHUTDOWN || !task_queue.empty(); });
-        if (state == SHUTDOWN && task_queue.empty())
-          return;
-        ThreadTask task = std::move(task_queue.front());
-        task_queue.pop();
-        queue_lock.unlock();
-
-        std::clog << "[" << std::this_thread::get_id() << "][⚒️][JOB] invoking '" << message_type_to_string(task.message->type) 
-                  << "' handler on message " << task.message->as_json() << '\n';
-        Message response = task.invoke(*task.message);
-        if (response.type != INVALID) {
-          std::unique_lock lock(mutex_write_response);
-          std::clog << "[" << std::this_thread::get_id() << "][✉️][JOB] === response begin:\n";
-          std::cout << response.as_json() << std::endl;
-          std::clog << "[" << std::this_thread::get_id() << "][✉️][JOB] === response end\n";
-          lock.unlock();
-          std::clog << "[" << std::this_thread::get_id() << "][⚒️][JOB] finished handling '" 
-                    << message_type_to_string(task.message->type) << "'\n";
-        }
-      }
-    });
-    std::thread t(worker_fn);
-    worker.swap(t);
-  }
+  for (std::thread& worker : worker_pool)
+    worker = std::thread(std::bind(&Node::worker_loop, this));
 
   state = RUNNING;
   while (RUNNING == state) {
@@ -77,11 +57,13 @@ void Node::run()
   }
 }
 
+
 void Node::stop()
 {
   state = Node::SHUTDOWN;
   queue_condition.notify_all();
 }
+
 
 void Node::register_handler(MessageType type, callback_fn handler)
 {
@@ -94,6 +76,34 @@ void Node::register_handler(MessageType type, callback_fn handler)
   std::clog << "[✅][RPC] handler for '" << message_type_to_string(type) << "' registered.\n";
 }
 
+
+auto Node::handle_init(const Message& msg) -> Message
+{
+  std::vector<std::string> node_ids;
+  if (!msg.body.contains("node_id") || !msg.body["node_id"].is_string()) {
+    std::clog << "[❓][SYS] received init request without node_id\n";
+    // TODO: error messages
+    return msg.create_response();
+  }
+  std::string_view self_id = msg.body["node_id"].get<std::string_view>();
+
+
+  node_ids = msg.body["node_ids"];
+  std::size_t idx = 0;
+  for (std::string_view id : node_ids) {
+    if (self_id.compare(id) == 0)
+      break;
+    ++idx;
+  }
+  if (idx == node_ids.size())
+    return Message();
+
+  // TODO: get boolean return and respond accordingly
+  init(std::move(node_ids), idx);
+  return msg.create_response();
+}
+
+
 void Node::dispatch_message(std::string&& raw)
 {
   std::optional<Message> msg = Message::parse(raw);
@@ -102,6 +112,10 @@ void Node::dispatch_message(std::string&& raw)
     return;
   }
   std::clog << "[✅][MSG] parsed: '" << msg->as_json() << "'\n";
+  if (self_node_id.empty() && msg->type != INIT_REQ) {
+    std::clog << "[⚠️][MSG] received non-init request before node has been initialized, ignoring\n";
+    return;
+  }
 
   auto found = handler_map.find(msg->type);
   if (found == handler_map.end()) {
@@ -121,10 +135,31 @@ void Node::dispatch_message(std::string&& raw)
   queue_condition.notify_one();
 }
 
-void Node::write_response(json response)
+
+void Node::worker_loop()
 {
-  std::unique_lock lock(mutex_write_response);
-  std::cout << response << std::endl;
+  while (true) {
+    std::unique_lock queue_lock(mutex_thread_tasks);
+    queue_condition.wait(queue_lock, [this]{ return state == SHUTDOWN || !task_queue.empty(); });
+    if (state == SHUTDOWN && task_queue.empty())
+      return;
+    ThreadTask task = std::move(task_queue.front());
+    task_queue.pop();
+    queue_lock.unlock();
+
+    std::clog << "[" << std::this_thread::get_id() << "][⚒️][JOB] invoking '" << message_type_to_string(task.message->type) 
+              << "' handler on message " << task.message->as_json() << '\n';
+    Message response = task.invoke(*task.message);
+    if (response.type != INVALID) {
+      std::unique_lock lock(mutex_write_response);
+      std::clog << "[" << std::this_thread::get_id() << "][✉️][JOB] response begin:\n";
+      std::cout << response.as_json() << std::endl;
+      std::clog << "[" << std::this_thread::get_id() << "][✉️][JOB] === response end\n";
+      lock.unlock();
+      std::clog << "[" << std::this_thread::get_id() << "][⚒️][JOB] finished handling '" 
+        << message_type_to_string(task.message->type) << "'\n";
+    }
+  }
 }
 
 /*

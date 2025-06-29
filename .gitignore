@@ -1,3 +1,4 @@
 store/
 compile_commands.json
 bin/
+*.o

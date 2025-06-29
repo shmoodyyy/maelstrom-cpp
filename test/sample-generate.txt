@@ -1,0 +1,2 @@
+# request
+{"src":"n1","dest":"c1","body":{"msg_id":1,"type":"generate"}}

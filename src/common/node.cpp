@@ -1,5 +1,5 @@
 #include "node.h"
-#include "common/message.h"
+#include "message.h"
 #include "ext/nlohmann/json.hpp"
 #include <iostream>
 #include <mutex>
@@ -24,7 +24,8 @@ void Node::init(std::vector<std::string>&& all_nodes, int self_index)
   // TODO: add middleware to be pissy about unrecognized node id references
   all_node_ids = std::move(all_nodes);
   self_node_id = all_node_ids.at(self_index);
-    std::clog << "[✅][SYS] node initialized\n";
+  Snowflake::init_snowflakes(self_index);
+  std::clog << "[✅][SYS] node initialized\n";
 }
 
 
@@ -39,6 +40,7 @@ void Node::run()
     std::string buf;
     std::getline(std::cin, buf);
     if (buf.empty()) {
+      std::clog << "[🛬][SYS] received empty line, shutting node down...\n";
       state = SHUTDOWN;
       break;
     }
@@ -46,7 +48,9 @@ void Node::run()
     dispatch_message(std::move(buf));
   }
 
+  std::clog << "[⏰][SYS] waiting for workers...\n";
   int join_count = 0;
+  queue_condition.notify_all();
   while (join_count != worker_count) {
     for (auto& worker : worker_pool) {
       if (worker.joinable()) {
@@ -55,6 +59,7 @@ void Node::run()
       }
     }
   }
+  std::clog << "[👺][SYS] clean node shutdown finished\n";
 }
 
 

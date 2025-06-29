@@ -1,4 +1,5 @@
 #include "message.h"
+#include "common/snowflake.h"
 #include <atomic>
 #include <optional>
 #include <iostream>
@@ -8,11 +9,14 @@ auto message_type_from_string(std::string_view raw) -> const MessageType
 {
   // is case-sensitivity okay if not good in the case of RPC?
   const std::unordered_map<std::string_view, MessageType> conversion_map = {
-    { "init",     INIT_REQ },
-    { "init_ok",  INIT_RES },
+    { "init",         INIT_REQ },
+    { "init_ok",      INIT_RES },
 
-    { "echo",     ECHO_REQ },
-    { "echo_ok",  ECHO_RES },
+    { "echo",         ECHO_REQ },
+    { "echo_ok",      ECHO_RES },
+
+    { "generate",     GENERATE_REQ },
+    { "generate_ok",  GENERATE_RES },
   };
   auto found = conversion_map.find(raw);
   return found == conversion_map.end() ? INVALID : found->second;
@@ -31,8 +35,12 @@ auto message_type_to_string(MessageType type) -> const std::string_view
 
     case ECHO_REQ: return "echo"sv;
     case ECHO_RES: return "echo_ok"sv;
+
+    case GENERATE_REQ: return "generate"sv;
+    case GENERATE_RES: return "generate_ok"sv;
   }
   // should probably be very pissy and throwing an error instead / aborting, garbage in system panic out
+  // addendum: no? are you stupid? garbage in error message out
   return std::string_view();
 }
 
@@ -96,14 +104,14 @@ Message::Message()
   , reply_id(-1)
 {}
 
-Message::Message(MessageType type, int id, std::string_view from, std::string_view to)
+Message::Message(MessageType type, Snowflake id, std::string_view from, std::string_view to)
   : Message(type, id, -1, from, to)
 {}
 
-Message::Message(MessageType type, int id, int reply_id, std::string_view from, std::string_view to)
+Message::Message(MessageType type, Snowflake id, Snowflake reply_id, std::string_view from, std::string_view to)
   : type(type)
-  , id(type == INVALID ? -1 : id)
-  , reply_id(type == INVALID ? -1 : reply_id)
+  , id(type == INVALID ? Snowflake(-1) : id)
+  , reply_id(type == INVALID ? Snowflake(-1) : reply_id)
   , from(from)
   , to(to)
 {
@@ -120,15 +128,15 @@ auto Message::create_response() const -> Message
   MessageType response_type = INVALID;
   switch (type)
   {
-    case INIT_REQ: response_type = INIT_RES; break;
-    case ECHO_REQ: response_type = ECHO_RES; break;
+    case INIT_REQ:      response_type = INIT_RES; break;
+    case ECHO_REQ:      response_type = ECHO_RES; break;
+    case GENERATE_REQ:  response_type = GENERATE_RES; break;
 
     default:
       std::cerr << "unimplemented response for message of type '" << message_type_to_string(type) << "'\n";
       return Message();
   }
-  // this static atomic id gen is a mess
-  Message response(response_type, next_id(), to, from);
+  Message response(response_type, Snowflake(), id, to, from);
   response.body["in_reply_to"] = id;
   return response;
 }
@@ -140,16 +148,9 @@ auto Message::as_json() const -> json
     { "dest", to },
     { "body", body }
   };
-  if (id != -1)
+  if (id.good())
     as_json["body"]["msg_id"] = id;
-  if (reply_id != -1)
+  if (reply_id.good())
     as_json["body"]["in_reply_to"] = reply_id;
   return as_json;
 }
-
-auto Message::next_id() -> const int
-{
-  return naive_next_id.fetch_add(1, std::memory_order_seq_cst);
-}
-
-std::atomic_int Message::naive_next_id = 1;

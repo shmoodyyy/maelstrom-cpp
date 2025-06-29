@@ -1,6 +1,7 @@
 #ifndef COMMON_NODE_HEADER
 #define COMMON_NODE_HEADER
 #include "message.h"
+#include "snowflake.h"
 #include "../ext/nlohmann/json.hpp"
 #include <condition_variable>
 #include <queue>

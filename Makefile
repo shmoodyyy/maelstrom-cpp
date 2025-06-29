@@ -4,7 +4,7 @@ OBJ_DIR = ./obj
 OBJ = $(patsubst %.cpp,%.o,$(SRC))
 INCLUDE = -I$(SRC_DIR) -I${GLIBC_INCLUDE}
 CFLAGS = -Wall -pedantic
-CXXFLAGS = -std=c++23 -fno-exceptions
+CXXFLAGS = -std=c++23 -fno-exceptions -O3
 OUT_DIR = ./bin
 OUT = $(OUT_DIR)/node.run
 

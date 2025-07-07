@@ -2,7 +2,7 @@
 #include "common/encoding/base64.h"
 #include "ext/nlohmann/json.hpp"
 #include <cstdint>
-#include <ios>
+#include <iostream>
 #include <optional>
 #include <random>
 
@@ -18,8 +18,6 @@ Snowflake::Snowflake(uint64_t most_sig, uint64_t least_sig)
   , m_least_sig(least_sig)
 {}
 
-
-#include <iostream>
 auto Snowflake::generate() -> Self
 {
   Snowflake out;
@@ -27,6 +25,15 @@ auto Snowflake::generate() -> Self
   std::uniform_int_distribution<uint64_t> dist;
   out.m_most_sig = dist(gen);
   out.m_least_sig = dist(gen);
+  return out;
+}
+
+auto Snowflake::generate_64() -> Self
+{
+  Snowflake out;
+  std::mt19937_64 gen{ std::random_device()() };
+  std::uniform_int_distribution<uint64_t> dist;
+  out.m_most_sig = dist(gen);
   return out;
 }
 
@@ -38,11 +45,16 @@ auto Snowflake::invalid() -> Self
 auto Snowflake::from_json(json::value_type json_value) -> std::optional<Self>
 {
   switch (json_value.type()) {
-    case nlohmann::detail::value_t::array:    return from_json_array(json_value);
-    case nlohmann::detail::value_t::string:   return from_json_string(json_value);
+    case nlohmann::detail::value_t::array:          return from_json_array(json_value);
+    case nlohmann::detail::value_t::string:         return from_json_string(json_value);
 
-    default:                                  return std::nullopt;
+    case nlohmann::detail::value_t::number_unsigned:
+    case nlohmann::detail::value_t::number_integer: return from_json_number(json_value);
+
+    default:                                        break;
   }
+  std::clog << "[❓][UID] couldnt parse msg_id: " << json_value << '\n';
+  return std::nullopt;
 }
 
 auto Snowflake::from_json_array(json::array_t array) -> std::optional<Self>
@@ -121,6 +133,10 @@ auto Snowflake::from_json_string(json::string_t string) -> std::optional<Self>
 
 auto Snowflake::as_json() const -> json::value_type
 {
+  if (m_most_sig != 0 && m_least_sig == 0) {
+    return m_most_sig;
+  }
+
   std::string out;
   static_assert(sizeof(m_most_sig) == 8);
   static_assert(sizeof(m_least_sig) == 8);
@@ -151,4 +167,9 @@ auto Snowflake::as_json() const -> json::value_type
   for (int i = 0; i < sizeof(bytes) / sizeof(void*); ++i)
     out[i] = *bytes[i];
   return encoding::encode_base64url(out).value_or("");
+}
+
+auto Snowflake::from_json_number(json::number_integer_t id) -> std::optional<Self>
+{
+  return Snowflake(id, 0);
 }

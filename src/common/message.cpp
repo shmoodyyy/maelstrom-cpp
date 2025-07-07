@@ -109,8 +109,8 @@ Message::Message(MessageType type, Snowflake id, std::string_view from, std::str
 
 Message::Message(MessageType type, Snowflake id, Snowflake reply_id, std::string_view from, std::string_view to)
   : type(type)
-  , id(type == INVALID ? Snowflake::invalid() : id)
-  , reply_id(type == INVALID ? Snowflake::invalid() : reply_id)
+  , id(id)
+  , reply_id(reply_id)
   , from(from)
   , to(to)
 {
@@ -135,8 +135,7 @@ auto Message::create_response() const -> Message
       std::cerr << "unimplemented response for message of type '" << message_type_to_string(type) << "'\n";
       return Message();
   }
-  Message response(response_type, Snowflake::generate(), id, to, from);
-  response.body["in_reply_to"] = id.as_json();
+  Message response(response_type, Snowflake::generate_64(), id, to, from);
   return response;
 }
 
@@ -147,9 +146,5 @@ auto Message::as_json() const -> json
     { "dest", to },
     { "body", body }
   };
-  if (id.is_valid())
-    as_json["body"]["msg_id"] = id.as_json();
-  if (reply_id.is_valid())
-    as_json["body"]["in_reply_to"] = reply_id.as_json();
   return as_json;
 }

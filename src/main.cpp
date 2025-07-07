@@ -13,7 +13,7 @@ int main(int argc, const char** argv) {
 
   node.register_handler(GENERATE_REQ, [](const Message& msg) -> Message {
     Message response = msg.create_response();
-    response.body["id"] = Snowflake();
+    response.body["id"] = Snowflake::generate().as_json();
     return response;
   });
 

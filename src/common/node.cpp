@@ -1,4 +1,5 @@
 #include "node.h"
+#include "common/snowflake.h"
 #include "message.h"
 #include "ext/nlohmann/json.hpp"
 #include <iostream>
@@ -24,7 +25,6 @@ void Node::init(std::vector<std::string>&& all_nodes, int self_index)
   // TODO: add middleware to be pissy about unrecognized node id references
   all_node_ids = std::move(all_nodes);
   self_node_id = all_node_ids.at(self_index);
-  Snowflake::init_snowflakes(self_index);
   std::clog << "[✅][SYS] node initialized\n";
 }
 
@@ -91,7 +91,6 @@ auto Node::handle_init(const Message& msg) -> Message
     return msg.create_response();
   }
   std::string_view self_id = msg.body["node_id"].get<std::string_view>();
-
 
   node_ids = msg.body["node_ids"];
   std::size_t idx = 0;

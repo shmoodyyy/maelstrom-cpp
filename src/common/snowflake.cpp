@@ -1,55 +1,154 @@
 #include "snowflake.h"
-#include <cmath>
-#include <iostream>
-#include <chrono>
-#include <mutex>
+#include "common/encoding/base64.h"
+#include "ext/nlohmann/json.hpp"
+#include <cstdint>
+#include <ios>
+#include <optional>
 #include <random>
 
-Snowflake Snowflake::last_snowflake = Snowflake(-1);
-std::mutex Snowflake::gen_mutex;
-uint8_t Snowflake::node_id = -1;
-
-void Snowflake::init_snowflakes(uint8_t node)
-{
-  std::unique_lock lock(gen_mutex);
-  if (last_snowflake.good()) {
-    std::clog << "[🦀][GID] attempting to reset snowflakes on initialized node\n";
-    std::abort();
-  }
-  node_id = node;
-}
+Snowflake Snowflake::invalid_snowflake(0, 0);
 
 Snowflake::Snowflake()
 {
-  std::unique_lock lock(gen_mutex);
-  m_id = gen_snowflake_id();
-  last_snowflake = *this;
+  *this = invalid_snowflake;
 }
 
-Snowflake::Snowflake(uint64_t id)
-  : m_id(id)
+Snowflake::Snowflake(uint64_t most_sig, uint64_t least_sig)
+  : m_most_sig(most_sig)
+  , m_least_sig(least_sig)
 {}
 
-auto Snowflake::gen_snowflake_id() -> const uint64_t
+
+#include <iostream>
+auto Snowflake::generate() -> Self
 {
-  if (node_id == (0xFF)) {
-    std::clog << "[🦀][GID] generating snowflakes on uninitialized node\n";
-    std::abort();
-  }
-
-  std::random_device rd;
-  std::mt19937_64 e2(rd());
+  Snowflake out;
+  std::mt19937_64 gen{ std::random_device()() };
   std::uniform_int_distribution<uint64_t> dist;
-  return dist(e2);
-
-  std::chrono::milliseconds timestamp =
-    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-
-  uint64_t timestamp_cast = timestamp.count();
-  uint64_t timestamp_trunc = (timestamp_cast & 0xEFFFFFFF);
-  return
-    timestamp_trunc == last_snowflake.timestamp()
-      ? last_snowflake.id()+1
-      : (timestamp_trunc << 32) | (uint64_t)(last_snowflake.node()) << 16;
+  out.m_most_sig = dist(gen);
+  out.m_least_sig = dist(gen);
+  return out;
 }
 
+auto Snowflake::invalid() -> Self
+{
+  return invalid_snowflake;
+}
+
+auto Snowflake::from_json(json::value_type json_value) -> std::optional<Self>
+{
+  switch (json_value.type()) {
+    case nlohmann::detail::value_t::array:    return from_json_array(json_value);
+    case nlohmann::detail::value_t::string:   return from_json_string(json_value);
+
+    default:                                  return std::nullopt;
+  }
+}
+
+auto Snowflake::from_json_array(json::array_t array) -> std::optional<Self>
+{
+  constexpr int json_integral_size = sizeof(json::number_unsigned_t);
+  static_assert(sizeof(json::number_integer_t) == sizeof(json::number_unsigned_t), "nlohmann json integers are not 64bit");
+  static_assert(16 / json_integral_size == 2);
+
+  if (array.size() != (16 / json_integral_size)) {
+    return std::nullopt;
+  }
+
+  Snowflake out;
+  uint64_t* fields[] = {
+    &out.m_most_sig,
+    &out.m_least_sig
+  };
+  static_assert(sizeof(fields) == 16);
+  for (int i = 0; i < json_integral_size; ++i) {
+    if (array[i].is_number())
+      return std::nullopt;
+    *fields[i] = array[i].get<uint64_t>();
+  }
+
+  return std::nullopt;
+}
+
+auto Snowflake::from_json_string(json::string_t string) -> std::optional<Self>
+{
+  Snowflake out;
+  static_assert(sizeof(out.m_most_sig) == 8);
+  static_assert(sizeof(out.m_least_sig) == 8);
+  std::optional<std::string> decoded = encoding::decode_base64(string);
+  if (!decoded.has_value())
+    return std::nullopt;
+  string = decoded.value();
+
+  uint8_t* bytes[] = {
+    (reinterpret_cast<uint8_t*>(&out.m_most_sig)   + 0),
+    reinterpret_cast<uint8_t*>(&out.m_most_sig)   + 1,
+    reinterpret_cast<uint8_t*>(&out.m_most_sig)   + 2,
+    reinterpret_cast<uint8_t*>(&out.m_most_sig)   + 3,
+    reinterpret_cast<uint8_t*>(&out.m_most_sig)   + 4,
+    reinterpret_cast<uint8_t*>(&out.m_most_sig)   + 5,
+    reinterpret_cast<uint8_t*>(&out.m_most_sig)   + 6,
+    reinterpret_cast<uint8_t*>(&out.m_most_sig)   + 7,
+
+    reinterpret_cast<uint8_t*>(&out.m_least_sig)  + 0,
+    reinterpret_cast<uint8_t*>(&out.m_least_sig)  + 1,
+    reinterpret_cast<uint8_t*>(&out.m_least_sig)  + 2,
+    reinterpret_cast<uint8_t*>(&out.m_least_sig)  + 3,
+    reinterpret_cast<uint8_t*>(&out.m_least_sig)  + 4,
+    reinterpret_cast<uint8_t*>(&out.m_least_sig)  + 5,
+    reinterpret_cast<uint8_t*>(&out.m_least_sig)  + 6,
+    reinterpret_cast<uint8_t*>(&out.m_least_sig)  + 7,
+  };
+  static_assert(sizeof(bytes) == (16 * sizeof(void*)));
+  static_assert(sizeof(*bytes[1]) == 1);
+  if (string.size() == 16) {
+    for (int i = 0; i < 16; ++i) {
+      *bytes[i] = string[i];
+    }
+    return out;
+  }
+
+  if (std::optional<std::string> decoded_64 = encoding::decode_base64(string); decoded_64.has_value()) {
+    if (decoded_64.value().size() == 16) {
+      for (int i = 0; i < 16; ++i) {
+        *bytes[i] = decoded_64.value()[i];
+      }
+      return out;
+    }
+  }
+  return std::nullopt;
+}
+
+auto Snowflake::as_json() const -> json::value_type
+{
+  std::string out;
+  static_assert(sizeof(m_most_sig) == 8);
+  static_assert(sizeof(m_least_sig) == 8);
+  out.resize(16);
+
+  const uint8_t* bytes[] = {
+    reinterpret_cast<const uint8_t*>(&m_most_sig)   + 0,
+    reinterpret_cast<const uint8_t*>(&m_most_sig)   + 1,
+    reinterpret_cast<const uint8_t*>(&m_most_sig)   + 2,
+    reinterpret_cast<const uint8_t*>(&m_most_sig)   + 3,
+    reinterpret_cast<const uint8_t*>(&m_most_sig)   + 4,
+    reinterpret_cast<const uint8_t*>(&m_most_sig)   + 5,
+    reinterpret_cast<const uint8_t*>(&m_most_sig)   + 6,
+    reinterpret_cast<const uint8_t*>(&m_most_sig)   + 7,
+
+    reinterpret_cast<const uint8_t*>(&m_least_sig)  + 0,
+    reinterpret_cast<const uint8_t*>(&m_least_sig)  + 1,
+    reinterpret_cast<const uint8_t*>(&m_least_sig)  + 2,
+    reinterpret_cast<const uint8_t*>(&m_least_sig)  + 3,
+    reinterpret_cast<const uint8_t*>(&m_least_sig)  + 4,
+    reinterpret_cast<const uint8_t*>(&m_least_sig)  + 5,
+    reinterpret_cast<const uint8_t*>(&m_least_sig)  + 6,
+    reinterpret_cast<const uint8_t*>(&m_least_sig)  + 7,
+  };
+  static_assert(sizeof(bytes) == (16 * sizeof(void*)));
+  static_assert(sizeof(*bytes[1]) == 1);
+
+  for (int i = 0; i < sizeof(bytes) / sizeof(void*); ++i)
+    out[i] = *bytes[i];
+  return encoding::encode_base64url(out).value_or("");
+}

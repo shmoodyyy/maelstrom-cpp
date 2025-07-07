@@ -2,30 +2,30 @@
 #define COMMON_SNOWFLAKE_HEADER
 #include "ext/nlohmann/json.hpp"
 #include <cstdint>
-#include <mutex>
 
 // thread-safe not-xitter-compliant snowflake impl
 class Snowflake
 {
+  using Self = Snowflake;
+  using json = nlohmann::json;
 public:
-  static void init_snowflakes(uint8_t node);
   Snowflake();
-  Snowflake(uint64_t id);
 
-  auto id() const         -> const uint64_t { return m_id; }
-  auto good() const       -> const bool     { return (id() >> 63) == 0; }
-  auto timestamp() const  -> const uint64_t { return (id() >> 32) & 0xEFFFFFFF; }
-  auto node() const       -> const uint8_t  { return id() >> 24; }
-  auto increment() const  -> const uint32_t { return id() << 8 >> 8; }
+  static auto generate()                  -> Self;
+  static auto invalid()                   -> Self;
+  static auto from_json(json::value_type) -> std::optional<Self>;
 
-  operator uint64_t()                   const { return id(); }
-  operator nlohmann::json::value_type() const { return nlohmann::json::value_type(id()); }
+  auto as_json() const -> json::value_type;
+  auto is_valid() const   -> bool                   { return m_most_sig != 0 && m_least_sig != 0; }
 private:
-  uint64_t m_id;
-  static auto gen_snowflake_id() -> const uint64_t;
-  static std::mutex gen_mutex;
-  static Snowflake  last_snowflake;
-  static uint8_t   node_id;
+  Snowflake(uint64_t, uint64_t);
+
+  static auto from_json_array(json::array_t array) -> std::optional<Self>;
+  static auto from_json_string(json::string_t string) -> std::optional<Self>;
+  static Snowflake invalid_snowflake;
+
+  uint64_t m_most_sig;
+  uint64_t m_least_sig;
 };
 
 #endif
